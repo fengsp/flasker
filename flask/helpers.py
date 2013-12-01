@@ -312,3 +312,115 @@ def get_root_path(import_name):
         __import__(import_name)
         filepath = sys.modules[import_name].__file__
     return os.path.dirname(os.path.abspath(filepath))
+
+
+def find_package(import_name):
+    root_mod_name = import_name.split('.')[0]
+    loader = pkgutil.get_loader(root_mod_name)
+    if loader is None or import_name == '__main__':
+        package_path = os.getcwd()
+    else:
+        if hasattr(loader, 'get_filename'):
+            filename = loader.get_filename(root_mod_name)
+        elif hasattr(loader, 'archive'):
+            filename = loader.archive
+        else:
+            __import__(import_name)
+            filename = sys.modules[import_name].__file__
+        package_path = os.path.abspath(os.path.dirname(filename))
+        if hasattr(loader, 'is_package'):
+            if loader.is_package(root_mod_name):
+                package_path = os.path.dirname(package_path)
+        else:
+            raise AttributeError(
+                ('%s.is_package() method is missing but is '
+                'required by Flask of PEP 302 import hooks') % loader.__class__.__name__)
+
+    site_parent, site_folder = os.path.split(package_path)
+    py_prefix = os.path.abspath(sys.prefix)
+    if package_path.startswith(py_prefix):
+        return py_prefix, package_path
+    elif site_folder.lower() == 'site-packages':
+        parent, folder = os.path.split(site_parent)
+        if folder.lower() == 'lib':
+            base_dir = parent
+        elif os.path.basename(parent).lower() == 'lib':
+            base_dir = os.path.dirname(parent)
+        else:
+            base_dir = site_parent
+        return base_dir, package_path
+    return None, package_path
+
+
+class locked_cached_property(object):
+    
+    def __init__(self, func, name=None, doc=None):
+        self.__name__ = name or func.__name__
+        self.__module__ = func.__module
+        self.__doc__ = doc or func.__doc__
+        self.func = func
+        self.lock = RLock()
+    
+    def __get__(self, obj, type=None):
+        if obj is None:
+            return self
+        with self.lock:
+            value = obj.__dict__.get(self.__name__, _missing)
+            if value is _missing:
+                value = self.func(obj)
+                obj.__dict__[self.__name__] = value
+            return value
+
+
+class _PackageBoundObject(object):
+    
+    def __init__(self, import_name, template_folder=None):
+        self.import_name = import_name
+        self.template_folder = template_folder
+        self.root_path = get_root_path(self.import_name)
+        self._static_folder = None
+        self._static_url_path = None
+
+    def _get_static_folder(self):
+        if self._static_folder is not None:
+            return os.path.join(self.root_path, self._static_folder)
+    def _set_static_folder(self, value):
+        self._static_folder = value
+    static_folder = property(_get_static_folder, _set_static_folder)
+    del _get_static_folder, _set_static_folder
+
+    def _get_static_url_path(self):
+        if self._static_url_path is None:
+            if self.static_folder is None:
+                return None
+            return '/' + os.path.basename(self.static_folder)
+        return self._static_url_path
+    def _set_static_url_path(self, value):
+        self._static_url_path = value
+    static_url_path = property(_get_static_url_path, _set_static_url_path)
+    del _get_static_url_path, _set_static_url_path
+
+    @property
+    def has_static_folder(self):
+        return self.static_folder is not None
+
+    @locked_cached_property
+    def jinja_loader(self):
+        if self.template_folder is not None:
+            return FileSystemLoader(os.path.join(self.root_path,
+                                                 self.template_folder))
+
+    def get_send_file_max_age(self, filename):
+        return current_app.config['SEND_FILE_MAX_AGE_DEFAULT']
+
+    def send_static_file(self, filename):
+        if not self.has_static_folder:
+            raise RuntimeError('No static folder for this object')
+        cache_timeout = self.get_send_file_max_age(filename)
+        return send_from_directory(self.static_folder, filename,
+                                   cache_timeout=cache_timeout)
+
+    def open_resource(self, resource, mode='rb'):
+        if mode not in ('r', 'rb'):
+            raise ValueError('Resources can only be opened for reading')
+        return open(os.path.join(self.root_path, resource), mode)
