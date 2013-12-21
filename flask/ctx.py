@@ -144,4 +144,69 @@ class RequestContext(object):
         top = _request_ctx_stack.top
         if top is not None and top.preserved:
             top.pop(top._preserved_exc)
+        
+        app_ctx = _app_ctx_stack.top
+        if app_ctx is None or app_ctx.app != self.app:
+            app_ctx = self.app.app_context()
+            app_ctx.push()
+            self._implicit_app_ctx_stack.append(app_ctx)
+        else:
+            self._implicit_app_ctx_stack.append(None)
 
+        if hasattr(sys, 'exc_clear'):
+            sys.exc_clear()
+
+        _request_ctx_stack.push(self)
+
+        self.session = self.app.open_session(self.request)
+        if self.session is None:
+            self.session = self.app.make_null_session()
+
+    def pop(self, exc=None):
+        app_ctx = self._implicit_app_ctx_stack.pop()
+
+        clear_request = False
+        if not self._implicit_app_ctx_stack:
+            self.preserved = False
+            self._preserved_exc = None
+            if exc is None:
+                exc = sys.exc_info()[1]
+            self.app.do_teardown_request(exc)
+            if hasattr(sys, 'exc_clear'):
+                sys.exc_clear()
+            request_close = getattr(self.request, 'close', None)
+            if request_close is not None:
+                request_close()
+            clear_request = True
+
+        rv = _request_ctx_stack.pop()
+        assert rv is self, 'Popped wrong request context.  (%r instead of %r)' \
+            % (rv, self)
+
+        if clear_request:
+            rv.request.environ['werkzeug.request'] = None
+        if app_ctx is not None:
+            app_ctx.pop(exc)
+
+    def auto_pop(self, exc):
+        if self.request.environ.get('flask._preserve_context') or \
+           (exc is not None and self.app.preserve_context_on_exception):
+            self.preserved = True
+            self._preserved_exc = exc
+        else:
+            self.pop(exc)
+    
+    def __enter__(self):
+        self.push()
+        return self
+
+    def __exit__(self, exc_type, exc_value, tb):
+        self.auto_pop(exc_value)
+
+    def __repr__(self):
+        return '<%s \'%s\' [%s] of %s>' % (
+            self.__class__.__name__,
+            self.request.url,
+            self.request.method,
+            self.app.name,
+        )
