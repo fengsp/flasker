@@ -26,7 +26,6 @@ from .config import connfigattribute, config
 from .ctx import requestcontext, appcontext, _appctxglobals
 from .globals import _request_ctx_stack, request, session, g
 from .sessions import securecookiesessioninterface
-from .module import blueprint_is_module
 from .templating import dispatchingjinjaloader, environment, \
      _default_template_ctx_processor
 from .signals import request_started, request_finished, got_request_exception, \
