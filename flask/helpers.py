@@ -36,7 +36,6 @@ from jinja2 import FileSystemLoader
 from .signals import message_flashed
 from .globals import session, _request_ctx_stack, _app_ctx_stack, \
      current_app, request
-from ._compat import string_types, text_type
 
 
 # sentinel
@@ -210,7 +209,7 @@ def send_file(filename_or_fp, mimetype=None, as_attachment=False,
               attachment_filename=None, add_dtags=True,
               cache_timeout=None, conditional=False):
     mtime = None
-    if isinstance(filename_or_fp, string_types):
+    if isinstance(filename_or_fp, (str, unicode)):
         filename = filename_or_fp
         file = None
     else:
@@ -266,7 +265,7 @@ def send_file(filename_or_fp, mimetype=None, as_attachment=False,
             os.path.getmtime(filename),
             os.path.getsize(filename),
             adler32(
-                filename.encode('utf-8') if isinstance(filename, text_type)
+                filename.encode('utf-8') if isinstance(filename, unicode)
                 else filename
             ) & 0xffffffff
         ))

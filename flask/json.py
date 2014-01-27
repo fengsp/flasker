@@ -17,7 +17,6 @@ except ImportError:
     from itsdangerous import json as _json
 
 from .globals import current_app, request
-from ._compat import text_type, PY2
 
 
 _slash_escape = '\\/' not in _json.dumps('/')
@@ -50,7 +49,7 @@ class JSONEncoder(_json.JSONEncoder):
         if isinstance(o, uuid.UUID):
             return str(o)
         if hasattr(o, '__html__'):
-            return text_type(o.__html__())
+            return unicode(o.__html__())
         return _json.JSONEncoder.default(self, o)
 
 
@@ -80,7 +79,7 @@ def dumps(obj, **kwargs):
     _dump_arg_defaults(kwargs)
     encoding = kwargs.pop('encoding', None)
     rv = _json.dumps(obj, **kwargs)
-    if encoding is not None and isinstance(rv, text_type):
+    if encoding is not None and isinstance(rv, unicode):
         rv = rv.encode(encoding)
     return rv
 
@@ -102,8 +101,6 @@ def loads(s, **kwargs):
 
 def load(fp, **kwargs):
     _load_arg_defaults(kwargs)
-    if not PY2:
-        fp = _wrap_reader_for_text(fp, kwargs.pop('encoding', None) or 'utf-8')
     return _json.load(fp, **kwargs)
 
 

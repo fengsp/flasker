@@ -12,8 +12,6 @@ import errno
 
 from werkzeug.utils import import_string
 
-from ._compat import string_types
-
 
 class ConfigAttribute(object):
     """Makes an attribute forward to the config"""
@@ -150,7 +148,7 @@ class Config(dict):
 
         :param obj: an import name or object
         """
-        if isinstance(obj, string_types):
+        if isinstance(obj, (str, unicode)):
             obj = import_string(obj)
         for key in dir(obj):
             if key.isupper():
